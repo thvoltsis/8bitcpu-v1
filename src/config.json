@@ -99,11 +99,10 @@
 "MACROS": {
     "thv_art": {
       "instances": {
-        "art_inst": {
           "art_inst": {
   "location": [72, 25],
   "orientation": "E"
-}
+
         }
       },
       "gds": ["dir::../macros/thv_art.gds"],
