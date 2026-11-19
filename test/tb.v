@@ -43,3 +43,12 @@ module tb ();
   );
 
 endmodule
+`ifdef GL_TEST
+module thv_art (
+`ifdef USE_POWER_PINS
+    inout VPWR,
+    inout VGND
+`endif
+);
+endmodule
+`endif
