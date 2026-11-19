@@ -100,8 +100,8 @@
     "thv_art": {
       "instances": {
         "art_inst": {
-          "location": [45, 12],
-          "orientation": "N"
+          "location": [60, 25],
+  "orientation": "E"
         }
       },
       "gds": ["dir::../macros/thv_art.gds"],
