@@ -1,40 +1,72 @@
-# SPDX-FileCopyrightText: © 2024 Tiny Tapeout
-# SPDX-License-Identifier: Apache-2.0
-
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
-
+from cocotb.triggers import RisingEdge, FallingEdge, ClockCycles
 
 @cocotb.test()
-async def test_project(dut):
-    dut._log.info("Start")
+async def test_full_cpu(dut):
+    dut._log.info("--- Εκκίνηση Πλήρους Ελέγχου (Gate-Level Safe) ---")
 
-    # Set the clock period to 10 us (100 KHz)
-    clock = Clock(dut.clk, 10, unit="us")
+    clock = Clock(dut.clk, 100, units="ns")
     cocotb.start_soon(clock.start())
 
-    # Reset
-    dut._log.info("Reset")
+    # Αρχικοποίηση (Ξεκινάμε με NOP = 13 για να μην πειραχτεί ο Accumulator)
     dut.ena.value = 1
+    dut.ui_in.value = 0
+    dut.uio_in.value = (13 << 3) | 1  
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 3)
+
+    await FallingEdge(dut.clk)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 2)
+
+    async def send_live(opcode, ui_data):
+        await FallingEdge(dut.clk)
+        dut.ui_in.value = ui_data
+        dut.uio_in.value = (opcode << 3) | 1
+        
+        # Περιμένουμε ΕΝΑ χτύπημα ρολογιού για να εκτελεστεί η πράξη
+        await RisingEdge(dut.clk)
+        
+        # Αμέσως μόλις πέσει το ρολόι, βάζουμε NOP (13) για να μην εκτελεστεί 2η φορά!
+        await FallingEdge(dut.clk)
+        dut.uio_in.value = (13 << 3) | 1
+
+    dut._log.info("ΦΑΣΗ 1: Reset και δοκιμή ALU...")
+    await FallingEdge(dut.clk)
+    assert dut.uo_out.value == 0, f"Σφάλμα Reset: {dut.uo_out.value}"
+
+    await send_live(5, 10)
+    await FallingEdge(dut.clk)
+    assert dut.uo_out.value == 10, f"Σφάλμα ALU LOAD: {dut.uo_out.value}"
+    
+    await send_live(1, 15)
+    await FallingEdge(dut.clk)
+    assert dut.uo_out.value == 25, f"Σφάλμα ALU ADD: {dut.uo_out.value}"
+
+    dut._log.info("ΦΑΣΗ 2: Φόρτωση προγράμματος στη RAM...")
+    await send_live(5, 0x52)
+    await send_live(6, 0x00)
+
+    await send_live(5, 0xF0)
+    await send_live(6, 0x01)
+
+    await send_live(5, 42)
+    await send_live(6, 0x02)
+
+    dut._log.info("ΦΑΣΗ 3: Εκτέλεση προγράμματος...")
+    await FallingEdge(dut.clk)
     dut.ui_in.value = 0
     dut.uio_in.value = 0
     dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 10)
+    await ClockCycles(dut.clk, 2)
+    
+    await FallingEdge(dut.clk)
     dut.rst_n.value = 1
-
-    dut._log.info("Test project behavior")
-
-    # Set the input values you want to test
-    dut.ui_in.value = 20
-    dut.uio_in.value = 30
-
-    # Wait for one clock cycle to see the output values
-    await ClockCycles(dut.clk, 1)
-
-    # The following assersion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    assert dut.uo_out.value == 50
-
-    # Keep testing the module by changing the input values, waiting for
-    # one or more clock cycles, and asserting the expected output values.
+    
+    await ClockCycles(dut.clk, 5)
+    
+    await FallingEdge(dut.clk)
+    assert dut.uo_out.value == 42, f"Σφάλμα Program Mode: {dut.uo_out.value}"
+    
+    dut._log.info("--- ΟΛΑ ΤΕΛΕΙΑ! Η CPU ΕΙΝΑΙ ΕΤΟΙΜΗ ΓΙΑ ΚΑΤΑΣΚΕΥΗ! ---")
