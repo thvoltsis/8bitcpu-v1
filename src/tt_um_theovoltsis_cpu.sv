@@ -77,7 +77,7 @@ module tt_um_theovoltsis_cpu(
         
         .a_opcode     (alu_op_wire),     
         .ram_add      (ram_addr_wire),   
-        .ram_we       (ram_we_wire),     
+        .we       (ram_we_wire),     
         .a            (accumulator_wire),
         .overflow     (overflow_flag_wire),
         .alu_b        (alu_operand_wire) 
