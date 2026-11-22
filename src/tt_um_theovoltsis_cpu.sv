@@ -66,7 +66,7 @@ module tt_um_theovoltsis_cpu(
     controler u_controler (
         .clk          (clk),
         .rst_n        (rst_n),
-        .run_cycle    (1'b1),            // <--- ΠΑΝΤΑ ΣΤΟ 1! Δεν χρειάζεται πλέον "πάγωμα" από εμάς.
+        
         .live         (live_mode),       
         .opcode       (sw_opcode),       
         .add          (sw_addr),         
