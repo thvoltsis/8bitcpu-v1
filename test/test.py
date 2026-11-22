@@ -92,3 +92,204 @@ def golden_step(a: int, ovf: int, opcode: int, b: int):
             new_ovf = 1
     elif opcode == OP_LOAD:
         res = b
+    elif opcode == OP_AND:
+        res = to_signed8((a & 0xFF) & (b & 0xFF))
+    elif opcode == OP_OR:
+        res = to_signed8((a & 0xFF) | (b & 0xFF))
+    elif opcode == OP_XOR:
+        res = to_signed8((a & 0xFF) ^ (b & 0xFF))
+    elif opcode == OP_NOT:
+        res = to_signed8(~(a & 0xFF))
+    elif opcode == OP_SHL:
+        res = to_signed8(((a & 0xFF) << 1) & 0xFF)
+    elif opcode == OP_SHR:
+        res = a >> 1  # Arithmetic right shift (διατηρεί το πρόσημο)
+    else:
+        res = 0
+
+    return res, new_ovf
+
+
+@cocotb.test()
+async def test_reset(dut):
+    """1. Έλεγχος Reset."""
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
+    await reset_cpu(dut)
+
+    assert int(dut.uo_out.value) == 0, f"Αναμενόταν uo_out=0 μετά το reset, πήρα {int(dut.uo_out.value)}"
+    ovf = (int(dut.uio_out.value) >> 7) & 1
+    assert ovf == 0, f"Αναμενόταν overflow=0 μετά το reset, πήρα {ovf}"
+
+
+@cocotb.test()
+async def test_all_alu_ops(dut):
+    """2. Συστηματικός έλεγχος όλων των εντολών της ALU σε Live mode."""
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
+    await reset_cpu(dut)
+
+    sequence = [
+        (OP_LOAD,  12,   12,  0, "LOAD 12"),
+        (OP_ADD,    8,   20,  0, "ADD 8"),
+        (OP_SUB,    5,   15,  0, "SUB 5"),
+        (OP_INC,    0,   16,  0, "INC"),
+        (OP_DEC,    0,   15,  0, "DEC"),
+        (OP_SHL,    0,   30,  0, "SHL (15 << 1)"),
+        (OP_SHR,    0,   15,  0, "SHR (30 >>> 1)"),
+        (OP_OR,  0x50,   95,  0, "OR 0x50"),
+        (OP_AND, 0x0F,   15,  0, "AND 0x0F"),
+        (OP_XOR, 0x0A,    5,  0, "XOR 0x0A"),
+        (OP_NOT,    0,   -6,  0, "NOT 5 -> -6"),
+        (OP_SHR,    0,   -3,  0, "Arithmetic SHR (-6 >>> 1 = -3)"),
+        (OP_JMP,   99,   -3,  0, "JMP σε Live mode (κρατάει το -3)"),
+        (OP_JZ,    99,   -3,  0, "JZ σε Live mode (κρατάει το -3)"),
+        (OP_STORE, 42,   -3,  0, "STORE (δεν αλλάζει τον Accumulator)"),
+        (OP_CLR,    0,    0,  0, "CLR"),
+    ]
+
+    for op, data, exp_a, exp_ovf, desc in sequence:
+        a_val, ovf = await exec_live(dut, op, data)
+        assert a_val == exp_a and ovf == exp_ovf, (
+            f"[{desc}] Αναμενόταν a={exp_a}, ovf={exp_ovf} | Πήρα a={a_val}, ovf={ovf}"
+        )
+
+
+@cocotb.test()
+async def test_overflow_edge_cases(dut):
+    """3. Έλεγχος όλων των περιπτώσεων Signed Overflow."""
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
+    await reset_cpu(dut)
+
+    await exec_live(dut, OP_LOAD, 100)
+    a_val, ovf = await exec_live(dut, OP_ADD, 50)
+    assert a_val == -106 and ovf == 1, f"ADD +ovf fail: a={a_val}, ovf={ovf}"
+
+    await exec_live(dut, OP_LOAD, -100)
+    a_val, ovf = await exec_live(dut, OP_ADD, -50)
+    assert a_val == 106 and ovf == 1, f"ADD -ovf fail: a={a_val}, ovf={ovf}"
+
+    await exec_live(dut, OP_LOAD, 100)
+    a_val, ovf = await exec_live(dut, OP_SUB, -50)
+    assert a_val == -106 and ovf == 1, f"SUB +ovf fail: a={a_val}, ovf={ovf}"
+
+    await exec_live(dut, OP_LOAD, 127)
+    a_val, ovf = await exec_live(dut, OP_INC, 0)
+    assert a_val == -128 and ovf == 1, f"INC ovf fail: a={a_val}, ovf={ovf}"
+
+    a_val, ovf = await exec_live(dut, OP_DEC, 0)
+    assert a_val == 127 and ovf == 1, f"DEC ovf fail: a={a_val}, ovf={ovf}"
+
+
+@cocotb.test()
+async def test_random_stress(dut):
+    """4. Randomized Stress Test (100 τυχαίες εντολές vs Golden Model)."""
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
+    await reset_cpu(dut)
+
+    rng = random.Random(42)
+    valid_ops = [
+        OP_CLR, OP_ADD, OP_SUB, OP_INC, OP_DEC, OP_LOAD,
+        OP_STORE, OP_AND, OP_OR, OP_XOR, OP_NOT, OP_SHL, OP_SHR, OP_JMP, OP_JZ
+    ]
+
+    ref_a = 0
+    ref_ovf = 0
+
+    for step in range(100):
+        op = rng.choice(valid_ops)
+        data = rng.randint(-128, 127)
+
+        ref_a, ref_ovf = golden_step(ref_a, ref_ovf, op, data)
+        a_val, ovf = await exec_live(dut, op, data)
+
+        assert a_val == ref_a and ovf == ref_ovf, (
+            f"Step {step} (op={op:04b}, data={data}): "
+            f"Αναμενόταν a={ref_a}, ovf={ref_ovf} | Πήρα a={a_val}, ovf={ovf}"
+        )
+
+
+@cocotb.test()
+async def test_program_mode_ram(dut):
+    """5. Γραμμικό πρόγραμμα στη RAM (LOAD, ADD, SUB, STORE, CLR, LOAD, HALT)."""
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
+    await reset_cpu(dut)
+
+    program = {
+        0: (OP_LOAD  << 4) | 10,   # LOAD  RAM[10] (25)
+        1: (OP_ADD   << 4) | 11,   # ADD   RAM[11] (+17 = 42)
+        2: (OP_SUB   << 4) | 12,   # SUB   RAM[12] (-10 = 32)
+        3: (OP_STORE << 4) | 13,   # STORE RAM[13]
+        4: (OP_CLR   << 4) | 0,    # CLR
+        5: (OP_LOAD  << 4) | 13,   # LOAD  RAM[13] (32)
+        6: (OP_HALT  << 4) | 0,    # HALT
+        10: 25,
+        11: 17,
+        12: 10,
+    }
+
+    for addr, byte_val in program.items():
+        await write_ram_live(dut, addr, byte_val)
+
+    await exec_live(dut, OP_CLR, 0)
+
+    # Μετάβαση σε Program Mode (live = 0)
+    dut.uio_in.value = 0
+    dut.ui_in.value = 0
+
+    await ClockCycles(dut.clk, 16)
+    await FallingEdge(dut.clk)
+
+    a_val = to_signed8(int(dut.uo_out.value))
+    ovf = (int(dut.uio_out.value) >> 7) & 1
+    assert a_val == 32 and ovf == 0, f"Program Mode fail: αναμενόταν a=32, ovf=0 | πήρα a={a_val}, ovf={ovf}"
+
+    await ClockCycles(dut.clk, 10)
+    await FallingEdge(dut.clk)
+    assert to_signed8(int(dut.uo_out.value)) == 32, "HALT fail: ο Accumulator άλλαξε μετά το HALT"
+
+
+@cocotb.test()
+async def test_program_mode_loop_jmp_jz(dut):
+    """6. Loop στη RAM με JMP και JZ: υπολογίζει 5 * 4 = 20 με επαναληπτική πρόσθεση."""
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
+    await reset_cpu(dut)
+
+    program = {
+        # Loop: όσο count (RAM[14]) != 0, πρόσθεσε val (RAM[15]) στο sum (RAM[13])
+        
+        0: (OP_LOAD  << 4) | 14,   # A = count
+        1: (OP_JZ    << 4) | 9,    # αν count == 0 -> πήγαινε στο 9 (τέλος)
+        2: (OP_DEC   << 4) | 0,    # count = count - 1
+        3: (OP_STORE << 4) | 14,   # αποθήκευσε count
+        4: (OP_LOAD  << 4) | 13,   # A = sum
+        5: (OP_ADD   << 4) | 15,   # A = sum + val
+        6: (OP_STORE << 4) | 13,   # αποθήκευσε sum
+        7: (OP_JMP   << 4) | 0,    # πίσω στην αρχή του loop (0)
+        9: (OP_LOAD  << 4) | 13,   # φόρτωσε το τελικό sum στον Accumulator
+        10: (OP_HALT << 4) | 0,    # HALT
+        # Δεδομένα
+        13: 0,                     # sum = 0
+        14: 4,                     # count = 4
+        15: 5,                     # val = 5
+    }
+
+    for addr, byte_val in program.items():
+        await write_ram_live(dut, addr, byte_val)
+
+    await exec_live(dut, OP_CLR, 0)
+
+    # Μετάβαση σε Program Mode (live = 0)
+    dut.uio_in.value = 0
+    dut.ui_in.value = 0
+
+    # 4 επαναλήψεις * 8 εντολές * 2 κύκλοι = 64 κύκλοι + 8 κύκλοι εξόδου = 72 κύκλοι
+    await ClockCycles(dut.clk, 80)
+    await FallingEdge(dut.clk)
+
+    a_val = to_signed8(int(dut.uo_out.value))
+    ovf = (int(dut.uio_out.value) >> 7) & 1
+    assert a_val == 20 and ovf == 0, f"Loop JMP/JZ fail: αναμενόταν a=20, ovf=0 | πήρα a={a_val}, ovf={ovf}"
+
+    # Επιβεβαίωση ότι σταμάτησε όντως στο HALT
+    await ClockCycles(dut.clk, 10)
+    await FallingEdge(dut.clk)
+    assert to_signed8(int(dut.uo_out.value)) == 20, "HALT fail μετά το loop"
