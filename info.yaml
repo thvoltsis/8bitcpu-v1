@@ -1,23 +1,21 @@
 # Tiny Tapeout project information
 project:
-  title:        "8-bit Custom CPU"      # Βάλε ό,τι τίτλο θέλεις
-  author:       "theovolt"               # Το όνομά σου
-  discord:      ""                      # Το discord σου (προαιρετικό)
-  description:  "A single-cycle 8-bit CPU with ALU, RAM and Control Unit" 
-  language:     "SystemVerilog"         # Το αλλάξαμε σε SystemVerilog
-  clock_hz:     50000000                # Στοχεύουμε στα 50MHz
+  title:        "8-bit Custom CPU"
+  author:       "theovolt"
+  discord:      ""
+  description:  "An 8-bit Von Neumann CPU with signed ALU, 16-byte RAM, Live and Program modes"
+  language:     "SystemVerilog"
+  clock_hz:     50000000
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
-  tiles: "1x1"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
+  tiles: "1x1"
 
   # Your top module name must start with "tt_um_". Make it unique by including your github username:
-  top_module:  "tt_um_theovoltsis_cpu"      # Το ακριβές όνομα του top module σου
+  top_module:  "tt_um_theovoltsis_cpu"
 
   # List your project's source files here.
-  # Source files must be in ./src and you must list each source file separately, one per line.
-  # Don't forget to also update `PROJECT_SOURCES` in test/Makefile.
   source_files:
-    - "tt_um_theovoltsis_cpu.sv"            # ΠΡΟΣΟΧΗ: Το top.sv πρέπει να το μετονομάσεις σε tt_um_giorgos_cpu.sv
+    - "tt_um_theovoltsis_cpu.sv"
     - "controler.sv"
     - "alu.sv"
     - "ram.sv"
