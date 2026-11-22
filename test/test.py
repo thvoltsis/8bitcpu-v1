@@ -1,7 +1,7 @@
 import random
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import ClockCycles, Timer
 
 # Opcodes της CPU
 OP_CLR   = 0b0000
@@ -44,6 +44,7 @@ async def reset_cpu(dut):
     await ClockCycles(dut.clk, 5)
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 1)
+    await Timer(1, unit="ns")
 
 
 async def exec_live(dut, opcode: int, data: int = 0):
@@ -51,6 +52,7 @@ async def exec_live(dut, opcode: int, data: int = 0):
     dut.uio_in.value = make_uio_in(opcode, live=1)
     dut.ui_in.value = to_unsigned8(data)
     await ClockCycles(dut.clk, 1)
+    await Timer(1, unit="ns")
     a_val = to_signed8(int(dut.uo_out.value))
     ovf = (int(dut.uio_out.value) >> 7) & 1
     return a_val, ovf
@@ -234,12 +236,14 @@ async def test_program_mode_ram(dut):
     dut.ui_in.value = 0
 
     await ClockCycles(dut.clk, 16)
+    await Timer(1, unit="ns")
 
     a_val = to_signed8(int(dut.uo_out.value))
     ovf = (int(dut.uio_out.value) >> 7) & 1
     assert a_val == 32 and ovf == 0, f"Program Mode fail: αναμενόταν a=32, ovf=0 | πήρα a={a_val}, ovf={ovf}"
 
     await ClockCycles(dut.clk, 10)
+    await Timer(1, unit="ns")
     assert to_signed8(int(dut.uo_out.value)) == 32, "HALT fail: ο Accumulator άλλαξε μετά το HALT"
 
 
@@ -278,6 +282,7 @@ async def test_program_mode_loop_jmp_jz(dut):
 
     # 4 επαναλήψεις * 8 εντολές * 2 κύκλοι = 64 κύκλοι + 8 κύκλοι εξόδου = 72 κύκλοι
     await ClockCycles(dut.clk, 80)
+    await Timer(1, unit="ns")
 
     a_val = to_signed8(int(dut.uo_out.value))
     ovf = (int(dut.uio_out.value) >> 7) & 1
@@ -285,4 +290,5 @@ async def test_program_mode_loop_jmp_jz(dut):
 
     # Επιβεβαίωση ότι σταμάτησε όντως στο HALT
     await ClockCycles(dut.clk, 10)
+    await Timer(1, unit="ns")
     assert to_signed8(int(dut.uo_out.value)) == 20, "HALT fail μετά το loop"
