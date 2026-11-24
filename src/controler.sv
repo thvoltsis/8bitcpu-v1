@@ -14,7 +14,8 @@ module controler (
     output logic we,//write enable in ram
     output logic [3:0] ram_add,
     output logic overflow,
-    output logic signed [7:0] alu_b//data that goes to alu
+    output logic signed [7:0] alu_b,
+    output logic exec_en//data that goes to alu
 );
 typedef enum logic { FETCH = 1'b0, EXECUTE = 1'b1 } fsm;
 fsm state;
