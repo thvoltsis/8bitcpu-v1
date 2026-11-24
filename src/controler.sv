@@ -27,6 +27,8 @@ assign a_opcode=live?opcode:(state==EXECUTE?instruction_reg[7:4]:4'b0000);
 assign we=live?(opcode==4'b0110):(state==EXECUTE && instruction_reg[7:4]==4'b0110);
 assign alu_b=live?data:ram_data;
 
+    assign exec_en = live || (state == EXECUTE);
+
 
 always_ff @ (posedge clk) begin
     if(!rst_n)begin
