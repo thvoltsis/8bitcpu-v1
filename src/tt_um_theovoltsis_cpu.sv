@@ -44,7 +44,11 @@ module tt_um_theovoltsis_cpu(
     assign live_mode = uio_in[0];    // 0 = Εκτέλεση προγράμματος (RAM), 1 = Χειροκίνητη λειτουργία
     
     assign uo_out    = accumulator_wire;                         
-    assign uio_out   = {overflow_flag_wire, 7'b0000000};         
+    assign uio_out   = {overflow_flag_wire, 7'b0000000};
+    assign uo_out = uio_in[1] ? vga_out_sig : a;
+
+    logic       exec_en;
+logic [7:0] vga_out_sig;
 
     // --- Instantiations (Το Μοντάρισμα) ---
     ram u_ram (
@@ -80,9 +84,21 @@ module tt_um_theovoltsis_cpu(
         .we       (ram_we_wire),     
         .a            (accumulator_wire),
         .overflow     (overflow_flag_wire),
-        .alu_b        (alu_operand_wire) 
-    );
+        .alu_b        (alu_operand_wire),
 
+        .exec_en (exec_en)
+    );
+vga_out u_vga (
+    .clk        (clk),
+    .rst_n      (rst_n),
+    .exec_en    (exec_en),
+    .opcode     (a_opcode),
+    .op_a       (a),
+    .op_b       (alu_b),
+    .acc        (a),
+    .overflow   (overflow),
+    .vga_uo_out (vga_out_sig)
+);
 
 
 
