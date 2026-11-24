@@ -63,4 +63,105 @@ module vga_out (
         case (last_op)
             4'b0000: op_sym = 5'd12;    // C (CLR)
             4'b0001: op_sym = SYM_ADD;  // + (ADD)
-            4'
+            4'b0010: op_sym = SYM_SUB;  // - (SUB)
+            4'b0011: op_sym = SYM_ADD;  // + (INC)
+            4'b0100: op_sym = SYM_SUB;  // - (DEC)
+            4'b0101: op_sym = SYM_L;    // L (LDA)
+            4'b0110: op_sym = 5'd5;     // S (STA)
+            4'b0111: op_sym = 5'd10;    // A (AND)
+            4'b1000: op_sym = SYM_OR;   // | (OR)
+            4'b1001: op_sym = SYM_XOR;  // x (XOR)
+            4'b1010: op_sym = SYM_NOT;  // ~ (NOT)
+            4'b1011: op_sym = SYM_SHL;  // < (SHL)
+            4'b1100: op_sym = SYM_SHR;  // > (SHR)
+            4'b1101: op_sym = SYM_J;    // J (JMP)
+            4'b1110: op_sym = SYM_J;    // J (JPZ)
+            4'b1111: op_sym = SYM_H;    // H (HLT)
+        endcase
+    end
+
+    logic [4:0] glyph;
+    always_comb begin
+        case (char_idx)
+            2'd0:    glyph = op_sym;
+            2'd2:    glyph = {1'b0, acc[7:4]};
+            2'd3:    glyph = {1'b0, acc[3:0]};
+            default: glyph = 5'd0;
+        endcase
+    end
+
+    logic [14:0] bitmap;
+    always_comb begin
+        case (glyph)
+            5'd0:    bitmap = 15'b111_101_101_101_111; // 0
+            5'd1:    bitmap = 15'b010_110_010_010_111; // 1
+            5'd2:    bitmap = 15'b111_001_111_100_111; // 2
+            5'd3:    bitmap = 15'b111_001_111_001_111; // 3
+            5'd4:    bitmap = 15'b101_101_111_001_001; // 4
+            5'd5:    bitmap = 15'b111_100_111_001_111; // 5 / S
+            5'd6:    bitmap = 15'b111_100_111_101_111; // 6
+            5'd7:    bitmap = 15'b111_001_001_001_001; // 7
+            5'd8:    bitmap = 15'b111_101_111_101_111; // 8
+            5'd9:    bitmap = 15'b111_101_111_001_111; // 9
+            5'd10:   bitmap = 15'b010_101_111_101_101; // A
+            5'd11:   bitmap = 15'b110_101_110_101_110; // B
+            5'd12:   bitmap = 15'b111_100_100_100_111; // C
+            5'd13:   bitmap = 15'b110_101_101_101_110; // D
+            5'd14:   bitmap = 15'b111_100_110_100_111; // E
+            5'd15:   bitmap = 15'b111_100_110_100_100; // F
+            SYM_ADD: bitmap = 15'b000_010_111_010_000; // +
+            SYM_SUB: bitmap = 15'b000_000_111_000_000; // -
+            SYM_SHL: bitmap = 15'b001_010_100_010_001; // <
+            SYM_SHR: bitmap = 15'b100_010_001_010_100; // >
+            SYM_OR:  bitmap = 15'b010_010_010_010_010; // |
+            SYM_XOR: bitmap = 15'b000_101_010_101_000; // x
+            SYM_NOT: bitmap = 15'b000_010_101_000_000; // ~
+            SYM_L:   bitmap = 15'b100_100_100_100_111; // L
+            SYM_J:   bitmap = 15'b001_001_001_101_111; // J
+            SYM_H:   bitmap = 15'b101_101_111_101_101; // H
+            default: bitmap = 15'b000_000_000_000_000;
+        endcase
+    end
+
+    logic [2:0] row_bits;
+    always_comb begin
+        case (row)
+            3'd0:    row_bits = bitmap[14:12];
+            3'd1:    row_bits = bitmap[11:9];
+            3'd2:    row_bits = bitmap[8:6];
+            3'd3:    row_bits = bitmap[5:3];
+            3'd4:    row_bits = bitmap[2:0];
+            default: row_bits = 3'b000;
+        endcase
+    end
+
+    logic pixel_on;
+    always_comb begin
+        if (!in_box) begin
+            pixel_on = 1'b0;
+        end else begin
+            case (col)
+                2'd0:    pixel_on = row_bits[2];
+                2'd1:    pixel_on = row_bits[1];
+                2'd2:    pixel_on = row_bits[0];
+                default: pixel_on = 1'b0;
+            endcase
+        end
+    end
+
+    logic [1:0] R, G, B;
+    always_comb begin
+        if (!video_active) begin
+            R = 2'b00; G = 2'b00; B = 2'b00;
+        end else if (pixel_on) begin
+            R = 2'b11; G = 2'b11; B = 2'b11;
+        end else begin
+            R = overflow ? 2'b10 : 2'b00;
+            G = 2'b00;
+            B = overflow ? 2'b00 : 2'b01;
+        end
+    end
+
+    assign vga_uo_out = {hsync, B[0], G[0], R[0], vsync, B[1], G[1], R[1]};
+
+endmodule
