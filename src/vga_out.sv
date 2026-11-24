@@ -3,19 +3,16 @@
 module vga_out (
     input  logic       clk,        // 25.175 MHz
     input  logic       rst_n,
-    input  logic       exec_en,    // 1 όταν εκτελείται εντολή (live || state==EXECUTE)
-    input  logic [3:0] opcode,     // a_opcode από controler
-    input  logic [7:0] op_a,       // a (Accumulator πριν την πράξη)
-    input  logic [7:0] op_b,       // alu_b από controler
-    input  logic [7:0] acc,        // a (τρέχων Accumulator)
-    input  logic       overflow,   // overflow από controler
-    output logic [7:0] vga_uo_out  // TinyVGA PMOD pinout
+    input  logic       exec_en,
+    input  logic [3:0] opcode,
+    input  logic [7:0] op_a,
+    input  logic [7:0] op_b,
+    input  logic [7:0] acc,
+    input  logic       overflow,
+    output logic [7:0] vga_uo_out
 );
 
-    // 640x480 @ 60Hz timing counters (800x525 total)
     logic [9:0] h_cnt, v_cnt;
-
-    // Αποθήκευση τελευταίας εκτελεσμένης εντολής
     logic [3:0] last_op;
     logic [7:0] last_a, last_b;
 
@@ -47,127 +44,121 @@ module vga_out (
     assign vsync        = ~((v_cnt >= 10'd490) && (v_cnt < 10'd492));
     assign video_active = (h_cnt < 10'd640) && (v_cnt < 10'd480);
 
-    // 20 στήλες των 32px (κάθε χαρακτήρας 3x5 x8 scale = 24x40px + 8px κενό)
-    logic [4:0] char_col, x_in_char;
+    // 8 χαρακτήρες στο x=256..511 (32px ο καθένας), y=192..231 (40px ύψος) -> 0 subtractors
+    logic       in_box;
+    logic [2:0] char_idx, row;
     logic [1:0] col;
-    logic       line1, line2;
-    logic [9:0] y_off;
-    logic [2:0] row;
 
-    assign char_col  = h_cnt[9:5];
-    assign x_in_char = h_cnt[4:0];
-    assign col       = x_in_char[4:3];
+    assign in_box   = (h_cnt[9:8] == 2'b01) && (v_cnt[9:6] == 4'd3) && (v_cnt[5:3] < 3'd5);
+    assign char_idx = h_cnt[7:5]; // 0..7
+    assign col      = h_cnt[4:3]; // 0..2 (3 = κενό)
+    assign row      = v_cnt[5:3]; // 0..4
 
-    assign line1 = (v_cnt >= 10'd160) && (v_cnt < 10'd200);
-    assign line2 = (v_cnt >= 10'd240) && (v_cnt < 10'd280);
-    assign y_off = line1 ? (v_cnt - 10'd160) : (v_cnt - 10'd240);
-    assign row   = y_off[5:3];
-
-    // Κωδικοί χαρακτήρων (32 σύμβολα -> 5-bit)
+    // Κωδικοί συμβόλων (0..15 = 0..F, 16..26 = σύμβολα)
     localparam logic [4:0]
-        CH_0  = 5'd0,  CH_1  = 5'd1,  CH_2  = 5'd2,  CH_3  = 5'd3,
-        CH_4  = 5'd4,  CH_5  = 5'd5,  CH_6  = 5'd6,  CH_7  = 5'd7,
-        CH_8  = 5'd8,  CH_9  = 5'd9,  CH_A  = 5'd10, CH_B  = 5'd11,
-        CH_C  = 5'd12, CH_D  = 5'd13, CH_E  = 5'd14, CH_F  = 5'd15,
-        CH_H  = 5'd16, CH_I  = 5'd17, CH_J  = 5'd18, CH_L  = 5'd19,
-        CH_M  = 5'd20, CH_N  = 5'd21, CH_O  = 5'd22, CH_P  = 5'd23,
-        CH_R  = 5'd24, CH_S  = 5'd25, CH_T  = 5'd26, CH_U  = 5'd27,
-        CH_X  = 5'd28, CH_Z  = 5'd29, CH_EQ = 5'd30, CH_SP = 5'd31;
+        SYM_ADD = 5'd16, SYM_SUB = 5'd17, SYM_SHL = 5'd18, SYM_SHR = 5'd19,
+        SYM_OR  = 5'd20, SYM_XOR = 5'd21, SYM_NOT = 5'd22, SYM_EQ  = 5'd23,
+        SYM_L   = 5'd24, SYM_J   = 5'd25, SYM_H   = 5'd26;
 
-    // Όλα τα 16 opcodes της CPU σου
-    logic [4:0] mn0, mn1, mn2;
+    // Αντιστοίχιση opcode -> 1 σύμβολο
+    logic [4:0] op_sym;
     always_comb begin
         case (last_op)
-            4'b0000: begin mn0 = CH_C; mn1 = CH_L; mn2 = CH_R;  end // CLR
-            4'b0001: begin mn0 = CH_A; mn1 = CH_D; mn2 = CH_D;  end // ADD
-            4'b0010: begin mn0 = CH_S; mn1 = CH_U; mn2 = CH_B;  end // SUB
-            4'b0011: begin mn0 = CH_I; mn1 = CH_N; mn2 = CH_C;  end // INC
-            4'b0100: begin mn0 = CH_D; mn1 = CH_E; mn2 = CH_C;  end // DEC
-            4'b0101: begin mn0 = CH_L; mn1 = CH_D; mn2 = CH_A;  end // LDA
-            4'b0110: begin mn0 = CH_S; mn1 = CH_T; mn2 = CH_A;  end // STA
-            4'b0111: begin mn0 = CH_A; mn1 = CH_N; mn2 = CH_D;  end // AND
-            4'b1000: begin mn0 = CH_O; mn1 = CH_R; mn2 = CH_SP; end // OR
-            4'b1001: begin mn0 = CH_X; mn1 = CH_O; mn2 = CH_R;  end // XOR
-            4'b1010: begin mn0 = CH_N; mn1 = CH_O; mn2 = CH_T;  end // NOT
-            4'b1011: begin mn0 = CH_S; mn1 = CH_H; mn2 = CH_L;  end // SHL
-            4'b1100: begin mn0 = CH_S; mn1 = CH_H; mn2 = CH_R;  end // SHR
-            4'b1101: begin mn0 = CH_J; mn1 = CH_M; mn2 = CH_P;  end // JMP
-            4'b1110: begin mn0 = CH_J; mn1 = CH_P; mn2 = CH_Z;  end // JPZ
-            4'b1111: begin mn0 = CH_H; mn1 = CH_L; mn2 = CH_T;  end // HLT
+            4'b0000: op_sym = 5'd12;    // C (CLR)
+            4'b0001: op_sym = SYM_ADD;  // + (ADD)
+            4'b0010: op_sym = SYM_SUB;  // - (SUB)
+            4'b0011: op_sym = SYM_ADD;  // + (INC)
+            4'b0100: op_sym = SYM_SUB;  // - (DEC)
+            4'b0101: op_sym = SYM_L;    // L (LDA)
+            4'b0110: op_sym = 5'd5;     // 5/S (STA)
+            4'b0111: op_sym = 5'd10;    // A (AND)
+            4'b1000: op_sym = SYM_OR;   // | (OR)
+            4'b1001: op_sym = SYM_XOR;  // x (XOR)
+            4'b1010: op_sym = SYM_NOT;  // ~ (NOT)
+            4'b1011: op_sym = SYM_SHL;  // < (SHL)
+            4'b1100: op_sym = SYM_SHR;  // > (SHR)
+            4'b1101: op_sym = SYM_J;    // J (JMP)
+            4'b1110: op_sym = SYM_J;    // J (JPZ)
+            4'b1111: op_sym = SYM_H;    // H (HLT)
         endcase
     end
 
-    // Επιλογή χαρακτήρα ανά γραμμή και στήλη
+    // Μορφή: "AAoBB=RR"
     logic [4:0] glyph;
     always_comb begin
-        glyph = CH_SP;
-        if (line1) begin
-            case (char_col)
-                5'd5:  glyph = mn0;
-                5'd6:  glyph = mn1;
-                5'd7:  glyph = mn2;
-                5'd9:  glyph = {1'b0, last_a[7:4]};
-                5'd10: glyph = {1'b0, last_a[3:0]};
-                5'd12: glyph = {1'b0, last_b[7:4]};
-                5'd13: glyph = {1'b0, last_b[3:0]};
-                default: glyph = CH_SP;
-            endcase
-        end else if (line2) begin
-            case (char_col)
-                5'd5:  glyph = CH_A;
-                5'd6:  glyph = CH_C;
-                5'd7:  glyph = CH_C;
-                5'd9:  glyph = CH_EQ;
-                5'd11: glyph = {1'b0, acc[7:4]};
-                5'd12: glyph = {1'b0, acc[3:0]};
-                default: glyph = CH_SP;
-            endcase
-        end
+        case (char_idx)
+            3'd0: glyph = {1'b0, last_a[7:4]};
+            3'd1: glyph = {1'b0, last_a[3:0]};
+            3'd2: glyph = op_sym;
+            3'd3: glyph = {1'b0, last_b[7:4]};
+            3'd4: glyph = {1'b0, last_b[3:0]};
+            3'd5: glyph = SYM_EQ;
+            3'd6: glyph = {1'b0, acc[7:4]};
+            3'd7: glyph = {1'b0, acc[3:0]};
+        endcase
     end
 
-    // 3x5 Font ROM
+    // Compact 3x5 Font ROM
     logic [14:0] bitmap;
     always_comb begin
         case (glyph)
-            CH_0:  bitmap = 15'b111_101_101_101_111;
-            CH_1:  bitmap = 15'b010_110_010_010_111;
-            CH_2:  bitmap = 15'b111_001_111_100_111;
-            CH_3:  bitmap = 15'b111_001_111_001_111;
-            CH_4:  bitmap = 15'b101_101_111_001_001;
-            CH_5:  bitmap = 15'b111_100_111_001_111;
-            CH_6:  bitmap = 15'b111_100_111_101_111;
-            CH_7:  bitmap = 15'b111_001_001_001_001;
-            CH_8:  bitmap = 15'b111_101_111_101_111;
-            CH_9:  bitmap = 15'b111_101_111_001_111;
-            CH_A:  bitmap = 15'b010_101_111_101_101;
-            CH_B:  bitmap = 15'b110_101_110_101_110;
-            CH_C:  bitmap = 15'b111_100_100_100_111;
-            CH_D:  bitmap = 15'b110_101_101_101_110;
-            CH_E:  bitmap = 15'b111_100_110_100_111;
-            CH_F:  bitmap = 15'b111_100_110_100_100;
-            CH_H:  bitmap = 15'b101_101_111_101_101;
-            CH_I:  bitmap = 15'b111_010_010_010_111;
-            CH_J:  bitmap = 15'b001_001_001_101_111;
-            CH_L:  bitmap = 15'b100_100_100_100_111;
-            CH_M:  bitmap = 15'b101_111_101_101_101;
-            CH_N:  bitmap = 15'b111_101_101_101_101;
-            CH_O:  bitmap = 15'b111_101_101_101_111;
-            CH_P:  bitmap = 15'b111_101_111_100_100;
-            CH_R:  bitmap = 15'b110_101_110_101_101;
-            CH_S:  bitmap = 15'b111_100_111_001_111;
-            CH_T:  bitmap = 15'b111_010_010_010_010;
-            CH_U:  bitmap = 15'b101_101_101_101_111;
-            CH_X:  bitmap = 15'b101_101_010_101_101;
-            CH_Z:  bitmap = 15'b111_001_010_100_111;
-            CH_EQ: bitmap = 15'b000_111_000_111_000;
+            5'd0:    bitmap = 15'b111_101_101_101_111; // 0
+            5'd1:    bitmap = 15'b010_110_010_010_111; // 1
+            5'd2:    bitmap = 15'b111_001_111_100_111; // 2
+            5'd3:    bitmap = 15'b111_001_111_001_111; // 3
+            5'd4:    bitmap = 15'b101_101_111_001_001; // 4
+            5'd5:    bitmap = 15'b111_100_111_001_111; // 5 / S
+            5'd6:    bitmap = 15'b111_100_111_101_111; // 6
+            5'd7:    bitmap = 15'b111_001_001_001_001; // 7
+            5'd8:    bitmap = 15'b111_101_111_101_111; // 8
+            5'd9:    bitmap = 15'b111_101_111_001_111; // 9
+            5'd10:   bitmap = 15'b010_101_111_101_101; // A
+            5'd11:   bitmap = 15'b110_101_110_101_110; // B
+            5'd12:   bitmap = 15'b111_100_100_100_111; // C
+            5'd13:   bitmap = 15'b110_101_101_101_110; // D
+            5'd14:   bitmap = 15'b111_100_110_100_111; // E
+            5'd15:   bitmap = 15'b111_100_110_100_100; // F
+            SYM_ADD: bitmap = 15'b000_010_111_010_000; // +
+            SYM_SUB: bitmap = 15'b000_000_111_000_000; // -
+            SYM_SHL: bitmap = 15'b001_010_100_010_001; // <
+            SYM_SHR: bitmap = 15'b100_010_001_010_100; // >
+            SYM_OR:  bitmap = 15'b010_010_010_010_010; // |
+            SYM_XOR: bitmap = 15'b000_101_010_101_000; // x
+            SYM_NOT: bitmap = 15'b000_010_101_000_000; // ~
+            SYM_EQ:  bitmap = 15'b000_111_000_111_000; // =
+            SYM_L:   bitmap = 15'b100_100_100_100_111; // L
+            SYM_J:   bitmap = 15'b001_001_001_101_111; // J
+            SYM_H:   bitmap = 15'b101_101_111_101_101; // H
             default: bitmap = 15'b000_000_000_000_000;
         endcase
     end
 
-    logic [3:0] bit_pos;
-    logic       pixel_on;
-    assign bit_pos  = 4'd14 - ({row, 1'b0} + {1'b0, row} + {2'b0, col});
-    assign pixel_on = (line1 || line2) && (x_in_char < 5'd24) && bitmap[bit_pos];
+    // Επιλογή γραμμής & στήλης χωρίς πολλαπλασιαστή
+    logic [2:0] row_bits;
+    always_comb begin
+        case (row)
+            3'd0: row_bits = bitmap[14:12];
+            3'd1: row_bits = bitmap[11:9];
+            3'd2: row_bits = bitmap[8:6];
+            3'd3: row_bits = bitmap[5:3];
+            3'd4: row_bits = bitmap[2:0];
+            default: row_bits = 3'b000;
+        endcase
+    end
+
+    logic pixel_on;
+    always_comb begin
+        if (!in_box) begin
+            pixel_on = 1'b0;
+        end else begin
+            case (col)
+                2'd0: pixel_on = row_bits[2];
+                2'd1: pixel_on = row_bits[1];
+                2'd2: pixel_on = row_bits[0];
+                default: pixel_on = 1'b0;
+            endcase
+        end
+    end
 
     logic [1:0] R, G, B;
     always_comb begin
