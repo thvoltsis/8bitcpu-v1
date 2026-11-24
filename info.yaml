@@ -5,7 +5,7 @@ project:
   discord:      ""
   description:  "An 8-bit Von Neumann CPU with signed ALU, 16-byte RAM, Live and Program modes"
   language:     "SystemVerilog"
-  clock_hz: 25175000
+  clock_hz:     25175000
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
   tiles: "1x1"
@@ -14,12 +14,13 @@ project:
   top_module:  "tt_um_theovoltsis_cpu"
 
   # List your project's source files here.
-source_files:
+  source_files:
     - "tt_um_theovoltsis_cpu.sv"
     - "controler.sv"
     - "alu.sv"
     - "ram.sv"
     - "vga_out.sv"
+
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
 pinout:
   # Inputs (ui_in)
