@@ -9,14 +9,19 @@ You can also include images in this folder and reference them in the markdown. E
 
 ## How it works
 
-This project is an **8-bit Von Neumann CPU** (inspired by the SAP-1 architecture) with **16 bytes of shared RAM** (16x8-bit), a **signed 8-bit ALU** (two's complement), and a 2-state FSM (`FETCH` and `EXECUTE`).
+This project is an **8-bit Von Neumann CPU** (inspired by the SAP-1 architecture) with **16 bytes of shared RAM** (16x8-bit), a **signed 8-bit ALU** (two's complement), a 2-state FSM (`FETCH` and `EXECUTE`), and an integrated **TinyVGA output controller**.
 
-The CPU supports two operating modes controlled by `uio_in[0]` (`live`):
+### Operating Modes (`uio_in[0]`)
 
-1. **Live Mode (`live = 1`):** Direct, single-cycle ALU control via external pins (`uio_in[6:3]` for the 4-bit opcode and `ui_in[7:0]` for the 8-bit signed operand). This mode is also used to load instructions and data into the internal 16-byte RAM using `LOAD` followed by `STORE`.
-2. **Program Mode (`live = 0`):** Autonomous execution from internal RAM starting at `PC = 0`. Each instruction takes 2 clock cycles:
+1. **Live Mode (`uio_in[0] = 1`):** Direct, single-cycle ALU control via external pins (`uio_in[6:3]` for the 4-bit opcode and `ui_in[7:0]` for the 8-bit signed operand). This mode is also used to load instructions and data into the internal 16-byte RAM using `LOAD` followed by `STORE`.
+2. **Program Mode (`uio_in[0] = 0`):** Autonomous execution from internal RAM starting at `PC = 0`. Each instruction takes 2 clock cycles:
    - **FETCH:** Reads the 8-bit instruction at `RAM[PC]` into the Instruction Register (`IR`).
-   - **EXECUTE:** Decodes `IR[7:4]` as the opcode and `IR[3:0]` as the 4-bit memory address/operand, updates the Accumulator (`A`), overflow flag, and Program Counter (`PC`).
+   - **EXECUTE:** Decodes `IR[7:4]` as the opcode and `IR[3:0]` as the 4-bit memory address/operand, updates the Accumulator (`A`), overflow flag (`uio_out[7]`), and Program Counter (`PC`).
+
+### Output Modes (`uio_in[1]`)
+
+- **LED / Accumulator Mode (`uio_in[1] = 0`):** Outputs the 8-bit Accumulator value directly on `uo_out[7:0]`.
+- **TinyVGA Mode (`uio_in[1] = 1`):** Switches `uo_out[7:0]` to a standard 640x480 @ 60 Hz TinyVGA RGB222 video signal (25.175 MHz pixel clock). The screen displays the 8 bits of the Accumulator (`A[7]` to `A[0]`) as eight 48x48 px squares (white = `1`, grey = `0`). The background is dark blue during normal operation and turns red when the signed `overflow` flag is asserted.
 
 ### Instruction Set Architecture (ISA)
 
@@ -47,13 +52,13 @@ Each instruction in RAM is 8 bits wide: `[7:4] = Opcode`, `[3:0] = Address`.
 
 ### 1. Live Mode Test
 1. Assert reset (`rst_n = 0`) for at least 1 clock cycle, then release (`rst_n = 1`).
-2. Set `uio_in[0] = 1` (`live = 1`).
+2. Set `uio_in[0] = 1` (`live = 1`) and `uio_in[1] = 0` (LED output mode).
 3. Apply `opcode = 0101` (`LOAD`) on `uio_in[6:3]` and `ui_in = 12`. Pulse `clk` -> `uo_out` reads `12`.
 4. Apply `opcode = 0001` (`ADD`) and `ui_in = 8`. Pulse `clk` -> `uo_out` reads `20`.
 5. Test signed overflow by loading `100` and adding `50`: `uo_out` wraps to `-106` (`0x96`) and `uio_out[7]` (`overflow`) goes high (`1`).
 
 ### 2. Program Mode Test (Loading & Running from RAM)
-To write a byte `VAL` to `RAM[ADDR]` in Live mode (`live = 1`):
+To write a byte `VAL` to `RAM[ADDR]` in Live mode (`uio_in[0] = 1`, `uio_in[1] = 0`):
 1. `LOAD` `VAL` (`opcode = 0101`, `ui_in = VAL`), pulse `clk`.
 2. `STORE` to `ADDR` (`opcode = 0110`, `ui_in = ADDR`), pulse `clk`.
 
@@ -69,6 +74,12 @@ After loading the bytes above:
 2. Switch to Program Mode by setting `uio_in[0] = 0` (`live = 0`).
 3. Clock the CPU for at least 6 cycles -> `uo_out` outputs `42` (`0x2A`) and remains latched at `HALT`.
 
+### 3. TinyVGA Mode Test
+1. Connect a **TinyVGA PMOD** to the `uo_out` port and set the board clock to **25.175 MHz** (or 25 MHz).
+2. Set `uio_in[1] = 1` to enable VGA output.
+3. The monitor displays eight squares corresponding to the 8 bits of the Accumulator (`A[7:0]`), with a dark blue background (or red when `overflow = 1`).
+
 ## External hardware
 
-No external hardware is required. The chip can be driven directly from the Tiny Tapeout demo board's RP2040 microcontroller or manual switches/LEDs.
+- **None required** for standard CPU operation: the chip can be driven directly from the Tiny Tapeout demo board's RP2040 microcontroller or manual switches/LEDs.
+- **TinyVGA PMOD** (optional): required on `uo_out[7:0]` only when using the TinyVGA display mode (`uio_in[1] = 1`).

@@ -14,7 +14,8 @@ module controler (
     output logic we,//write enable in ram
     output logic [3:0] ram_add,
     output logic overflow,
-    output logic signed [7:0] alu_b//data that goes to alu
+    output logic signed [7:0] alu_b,
+    output logic exec_en//data that goes to alu
 );
 typedef enum logic { FETCH = 1'b0, EXECUTE = 1'b1 } fsm;
 fsm state;
@@ -26,6 +27,8 @@ assign ram_add=live?add:(state==FETCH?pc:instruction_reg[3:0]);
 assign a_opcode=live?opcode:(state==EXECUTE?instruction_reg[7:4]:4'b0000);
 assign we=live?(opcode==4'b0110):(state==EXECUTE && instruction_reg[7:4]==4'b0110);
 assign alu_b=live?data:ram_data;
+
+    assign exec_en = live || (state == EXECUTE);
 
 
 always_ff @ (posedge clk) begin

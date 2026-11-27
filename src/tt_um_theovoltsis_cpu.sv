@@ -1,21 +1,22 @@
 `default_nettype none
+
 (* blackbox *) (* keep *)
 module thv_art ();
 endmodule
+
 module tt_um_theovoltsis_cpu(
     input  logic [7:0] ui_in,    // 8 Διακόπτες (sw_addr & sw_data)
-    output logic [7:0] uo_out,   // 8 LEDs (Accumulator)
-    input  logic [7:0] uio_in,   // Αμφίδρομα (Είσοδοι: Opcode, Live)
+    output logic [7:0] uo_out,   // 8 LEDs (Accumulator) ή TinyVGA
+    input  logic [7:0] uio_in,   // Αμφίδρομα (Είσοδοι: Opcode, VGA Mode, Live)
     output logic [7:0] uio_out,  // Αμφίδρομα (Έξοδοι: Overflow flag)
     output logic [7:0] uio_oe,   // Output Enable
     input  logic       ena,      
-    input  logic       clk,      // Το ρολόι (Ελέγχεται απόλυτα από την πλακέτα / κουμπί)
+    input  logic       clk,      // Το ρολόι
     input  logic       rst_n     // Το Reset
 );
 
     // Το uio[7] ρυθμίζεται ως έξοδος (για το Overflow). Τα υπόλοιπα uio[6:0] είναι είσοδοι.
-        assign uio_oe = {1'b1, {7{~ena}}};
-
+    assign uio_oe = {1'b1, {7{~ena}}};
 
     // --- Καλωδίωση Εσωτερικών Σημάτων ---
     logic signed [7:0] sw_data;
@@ -23,7 +24,7 @@ module tt_um_theovoltsis_cpu(
     logic [3:0]        sw_addr;
     logic              live_mode;
     
-    // --- Καλώδια ALU & RAM ---
+    // --- Καλώδια ALU, RAM & VGA ---
     logic [3:0]        alu_op_wire;
     logic signed [7:0] alu_operand_wire;
     logic signed [7:0] alu_result_wire;
@@ -36,6 +37,9 @@ module tt_um_theovoltsis_cpu(
     logic signed [7:0] accumulator_wire;
     logic              overflow_flag_wire;
 
+    logic              exec_en;
+    logic [7:0]        vga_out_sig;
+
     // --- Ανάθεση Εξωτερικών Pins (I/O Mapping) ---
     assign sw_data   = ui_in[7:0];  
     assign sw_addr   = ui_in[3:0];  
@@ -43,8 +47,9 @@ module tt_um_theovoltsis_cpu(
     assign sw_opcode = uio_in[6:3]; 
     assign live_mode = uio_in[0];    // 0 = Εκτέλεση προγράμματος (RAM), 1 = Χειροκίνητη λειτουργία
     
-    assign uo_out    = accumulator_wire;                         
-    assign uio_out   = {overflow_flag_wire, 7'b0000000};         
+    // uio_in[1] = 0 -> Accumulator στα LEDs | uio_in[1] = 1 -> TinyVGA
+    assign uo_out    = uio_in[1] ? vga_out_sig : accumulator_wire;
+    assign uio_out   = {overflow_flag_wire, 7'b0000000};
 
     // --- Instantiations (Το Μοντάρισμα) ---
     ram u_ram (
@@ -66,7 +71,6 @@ module tt_um_theovoltsis_cpu(
     controler u_controler (
         .clk          (clk),
         .rst_n        (rst_n),
-        
         .live         (live_mode),       
         .opcode       (sw_opcode),       
         .add          (sw_addr),         
@@ -74,21 +78,28 @@ module tt_um_theovoltsis_cpu(
         .a_result     (alu_result_wire), 
         .a_overflow   (overflow_wire),   
         .ram_data     (ram_data_out_wire),
-        
         .a_opcode     (alu_op_wire),     
         .ram_add      (ram_addr_wire),   
-        .we       (ram_we_wire),     
+        .we           (ram_we_wire),     
         .a            (accumulator_wire),
         .overflow     (overflow_flag_wire),
-        .alu_b        (alu_operand_wire) 
+        .alu_b        (alu_operand_wire),
+        .exec_en      (exec_en)
     );
 
+    vga_out u_vga (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .exec_en    (exec_en),
+        .opcode     (alu_op_wire),
+        .op_a       (accumulator_wire),
+        .op_b       (alu_operand_wire),
+        .acc        (accumulator_wire),
+        .overflow   (overflow_flag_wire),
+        .vga_uo_out (vga_out_sig)
+    );
 
-
-
-
-(* keep *)
+    (* keep *)
     thv_art art_inst ();
 
 endmodule
-
