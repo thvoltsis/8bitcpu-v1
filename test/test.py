@@ -21,7 +21,7 @@ async def live_op(dut, opcode: int, data: int = 0):
     dut.ui_in.value = to_u8(data)
     dut.uio_in.value = make_uio(opcode=opcode, vga=0, live=1)
     await ClockCycles(dut.clk, 1)
-    await Timer(1, unit="ns")
+    await Timer(10, unit="ns")
 
 
 async def ram_write_byte(dut, addr: int, value: int):
@@ -46,7 +46,7 @@ async def test_cpu_full(dut):
     await ClockCycles(dut.clk, 5)
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 1)
-    await Timer(1, unit="ns")
+    await Timer(10, unit="ns")
 
     assert int(dut.uio_oe.value) == 0x80, f"Expected uio_oe=0x80, got {int(dut.uio_oe.value):#x}"
     assert int(dut.uo_out.value) == 0, "Expected acc=0 after reset"
@@ -109,7 +109,7 @@ async def test_cpu_full(dut):
     await ClockCycles(dut.clk, 2)
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 1)
-    await Timer(1, unit="ns")
+    await Timer(10, unit="ns")
 
     # Πρόγραμμα στη RAM:
     # 0: 0x58 -> LOAD ram[8]  (10)
@@ -144,24 +144,24 @@ async def test_cpu_full(dut):
 
     # Κάθε εντολή = 2 κύκλοι (FETCH + EXECUTE)
     await ClockCycles(dut.clk, 2)  # ram[0]: LOAD 10
-    await Timer(1, unit="ns")
+    await Timer(10, unit="ns")
     assert int(dut.uo_out.value) == 10, f"RAM LOAD failed: got {int(dut.uo_out.value)}"
 
     await ClockCycles(dut.clk, 2)  # ram[1]: ADD 5 -> 15
-    await Timer(1, unit="ns")
+    await Timer(10, unit="ns")
     assert int(dut.uo_out.value) == 15, f"RAM ADD failed: got {int(dut.uo_out.value)}"
 
     await ClockCycles(dut.clk, 2)  # ram[2]: SUB 15 -> 0
-    await Timer(1, unit="ns")
+    await Timer(10, unit="ns")
     assert int(dut.uo_out.value) == 0, f"RAM SUB failed: got {int(dut.uo_out.value)}"
 
     await ClockCycles(dut.clk, 2)  # ram[3]: JZ 5
     await ClockCycles(dut.clk, 2)  # ram[5]: LOAD 42
-    await Timer(1, unit="ns")
+    await Timer(10, unit="ns")
     assert int(dut.uo_out.value) == 42, f"RAM JZ/LOAD failed: got {int(dut.uo_out.value)}"
 
     await ClockCycles(dut.clk, 6)  # ram[6]: HLT (πρέπει να μείνει 42)
-    await Timer(1, unit="ns")
+    await Timer(10, unit="ns")
     assert int(dut.uo_out.value) == 42, "RAM HLT failed: acc changed after HLT"
     dut._log.info("4. RAM Program Execution (LOAD/ADD/SUB/JZ/HLT) OK")
 
@@ -172,7 +172,7 @@ async def test_cpu_full(dut):
 
     for _ in range(800):
         await ClockCycles(dut.clk, 1)
-        await Timer(1, unit="ns")
+        await Timer(10, unit="ns")
         hsync = (int(dut.uo_out.value) >> 7) & 1
         if hsync == 0:
             seen_hsync_low = True
